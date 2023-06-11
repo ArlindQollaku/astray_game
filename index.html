@@ -25,11 +25,19 @@
                 keyAxis        = [0, 0],
                 ironTexture    = THREE.ImageUtils.loadTexture('/fire.png'),
                 planeTexture   = THREE.ImageUtils.loadTexture('/concrete.png'),
-                brickTexture   = THREE.ImageUtils.loadTexture('/grass.png'),
+                brickTexture   = THREE.ImageUtils.loadTexture('/brick.png'),
                 gameState      = undefined,
                 startTime = 0,
                 currentTime = 0,
                 elapsedTime = 0,
+                threeStarTime = 0,
+                twoStarTime = 0,
+                oneStarTime = 0,
+                stars = 0,
+                retry = false,
+                gameEnded = false,
+                initialBallPosition = new THREE.Vector3(1, 1, ballRadius), // Store the initial position here
+
 
 
             // Box2D shortcuts
@@ -114,11 +122,11 @@
                 scene.add(light);
                 
                 // Add the ball.
-              g = new THREE.SphereGeometry(ballRadius, 32, 16);
-m = new THREE.MeshPhongMaterial({ map: ironTexture });
-ballMesh = new THREE.Mesh(g, m);
-ballMesh.position.set(1, 1, ballRadius);
-scene.add(ballMesh);
+                g = new THREE.SphereGeometry(ballRadius, 32, 16);
+                m = new THREE.MeshPhongMaterial({ map: ironTexture });
+                ballMesh = new THREE.Mesh(g, m);
+                ballMesh.position.set(1, 1, ballRadius);
+                scene.add(ballMesh);
 
                 // Add the camera.
                 var aspect = window.innerWidth/window.innerHeight;
@@ -160,12 +168,19 @@ scene.add(ballMesh);
 
             function updateRenderWorld() {
 
+                if (retry) {
+                    var currentPosition = wBall.GetPosition(); // Get the current position
+                    currentPosition.x = 1; // Modify the x position
+                    currentPosition.y = 1; // Modify the x position
+                    wBall.SetPosition(currentPosition);
+                    retry = false;
+                }
                 // Update ball position.
                 var stepX = wBall.GetPosition().x - ballMesh.position.x;
                 var stepY = wBall.GetPosition().y - ballMesh.position.y;
                 ballMesh.position.x += stepX;
                 ballMesh.position.y += stepY;
-
+                
                 // Update ball rotation.
                 var tempMat = new THREE.Matrix4();
                 tempMat.makeRotationAxis(new THREE.Vector3(0,1,0), stepX/ballRadius);
@@ -194,12 +209,24 @@ scene.add(ballMesh);
                         elapsedTime = 0;
                         maze = generateSquareMaze(mazeDimension);
                         maze[mazeDimension-1][mazeDimension-2] = false;
+                        if (!retry) {
                         createPhysicsWorld();
                         createRenderWorld();
+                        }
+                        else {
+                            // Reset the ball's position to the initial position
+                            ballMesh.position.copy(initialBallPosition);
+                            // Reset the ball's velocity
+                            wBall.SetLinearVelocity(new b2Vec2(0, 0));
+                        }
+                        drawStars();
                         camera.position.set(1, 1, 5);
                         light.position.set(1, 1, 1.3);
                         light.intensity = 0;
                         var level = Math.floor((mazeDimension-1)/2 - 4);
+                        threeStarTime = 15 + (level * 2)
+                        twoStarTime = 30 + (level * 2)
+                        oneStarTime = 60 + (level * 2)
                         $('#level').html('Level ' + level);
                         gameState = 'fade in';
                         break;
@@ -214,32 +241,54 @@ scene.add(ballMesh);
                         break;
 
                     case 'play':
+
                         updatePhysicsWorld();
                         updateRenderWorld();
                         renderer.render(scene, camera);
-                        currentTime = Date.now();
+                        if(!gameEnded){
+                            currentTime = Date.now();
+                        }
                         elapsedTime = (currentTime - startTime) / 1000;
+                        console.log(elapsedTime)
                         var minutes = Math.floor(elapsedTime / 60);
                         var seconds = Math.floor(elapsedTime % 60);
                         var timeString = 'Time: ';
                         if (minutes > 0) {
                              timeString += minutes + ' minute ';
+                             ctx.clearRect(50, 30, 50, 50);
+                             stars = 0
+
                           }
                         timeString += seconds + ' seconds';
+
+                        if (Math.floor(elapsedTime) == threeStarTime) {
+                            ctx.clearRect(150, 30, 50, 50);
+                            stars = 2;
+                        }
+                        if (Math.floor(elapsedTime) == twoStarTime) {
+                            ctx.clearRect(100, 30, 50, 50);
+                            stars = 1
+                        }
+                        if (Math.floor(elapsedTime) == oneStarTime) {
+                            ctx.clearRect(50, 30, 50, 50);
+                             stars = 0
+                        }
                          // Update the timer display
                        $('#timer').html(timeString);
                         // Check for victory.
                         var mazeX = Math.floor(ballMesh.position.x + 0.5);
                         var mazeY = Math.floor(ballMesh.position.y + 0.5);
                         if (mazeX == mazeDimension && mazeY == mazeDimension - 2) { 
-                            mazeDimension += 2;
-                            gameState = 'fade out';
+                            gameEnded = true;
+                            light.intensity = 0.0;
+                            openModal();
                         }
                         break;
-                
+                        
                     case 'fade out':
                         updatePhysicsWorld();
                         updateRenderWorld();
+                        
                         light.intensity += 0.1 * (0.0 - light.intensity);
                         renderer.render(scene, camera);
                         if (Math.abs(light.intensity - 0.0) < 0.1) {
@@ -248,7 +297,6 @@ scene.add(ballMesh);
                             gameState = 'initialize'
                         }
                         break;
-                        
                 }
             
                 requestAnimationFrame(gameLoop);
@@ -367,12 +415,59 @@ scene.add(ballMesh);
                 color: yellow;   
                 font-weight: bold;
             }
+            #stars {
+                position: absolute;
+                left: 50%;
+                padding: 4px;
+                color: yellow;   
+                font-weight: bold;
+            }
+            .modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                display: none;
+                align-items: center;
+                justify-content: center;
+                z-index: 999;
+            }
+
+            .modal-content {
+                background-color: white;
+                padding: 20px;
+                text-align: center;
+            }
+
+            .modal-buttons {
+                margin-top: 20px;
+            }
+
+            .modal-buttons button {
+                margin: 5px;
+            }
+
 
         </style>
         
     </head>
     
     <body>
+
+        <div id="modal" class="modal">
+            <div class="modal-content">
+              <h2>Game Win!</h2>
+              <p>Congratulations! You completed the level.</p>
+              <p id="starsText">You got 3 stars.</p>
+              <div class="modal-buttons">
+                <button id="retry-btn">Retry</button>
+                <button id="next-level-btn">Next Level</button>
+              </div>
+            </div>
+          </div>
+          
     
     <div id='instructions'>
         How to play Astray:
@@ -391,6 +486,118 @@ scene.add(ballMesh);
     </div>
     
     <div id="timer">Time: 0</div>
+    <canvas id="stars" width="300" height="250"></canvas>
+<script>
+    var nextLevelBtn = document.getElementById('next-level-btn');
+var retryBtn = document.getElementById('retry-btn');
+var modal = document.getElementById('modal');
+
+nextLevelBtn.addEventListener('click', function() {
+  // Code to proceed to the next level
+  closeModal();
+  mazeDimension += 2;
+  gameEnded = false;
+  gameState = 'fade out';
+});
+
+retryBtn.addEventListener('click', function() {
+  // Code to retry the current level
+  closeModal();
+  retry = true;
+  gameEnded = false;
+  gameState = 'initialize';
+
+});
+
+function openModal() {
+  var starsText = document.getElementById('starsText');
+  starsText.innerHTML = `You got ${stars} stars.`
+  nextLevelBtn.style.display = "inlin-block"
+  retryBtn.style.display = "inline-block"
+
+  if (stars == 3) {
+    retryBtn.style.display = "none"
+  }
+  else if (stars == 0) {
+    nextLevelBtn.style.display = "none"
+  }
+  modal.style.display = 'flex';
+}
+
+function closeModal() {
+  modal.style.display = 'none';
+}
+
+
+   var canvas = document.getElementById('stars');
+   var ctx = canvas.getContext('2d');
+function drawStars() {
+
+    stars = 3;
+   // First star (resized and filled)
+   ctx.save();
+   ctx.translate(50,30); // Move the context origin to (50, 100)
+   ctx.scale(0.2, 0.2); // Scale the star down to desired size
+   ctx.beginPath();
+   ctx.moveTo(108, 0.0);
+   ctx.lineTo(141, 70);
+   ctx.lineTo(218, 78.3);
+   ctx.lineTo(162, 131);
+   ctx.lineTo(175, 205);
+   ctx.lineTo(108, 170);
+   ctx.lineTo(41.2, 205);
+   ctx.lineTo(55, 131);
+   ctx.lineTo(1, 78);
+   ctx.lineTo(75, 68);
+   ctx.lineTo(108, 0);
+   ctx.closePath();
+   ctx.fillStyle = "gold"; // Set the fill color
+   ctx.fill();
+   ctx.restore();
+
+   // Second star (resized and filled)
+   ctx.save();
+   ctx.translate(100, 30); // Move the context origin to (100, 100)
+   ctx.scale(0.2, 0.2); // Scale the star down to desired size
+   ctx.beginPath();
+   ctx.moveTo(108, 0.0);
+   ctx.lineTo(141, 70);
+   ctx.lineTo(218, 78.3);
+   ctx.lineTo(162, 131);
+   ctx.lineTo(175, 205);
+   ctx.lineTo(108, 170);
+   ctx.lineTo(41.2, 205);
+   ctx.lineTo(55, 131);
+   ctx.lineTo(1, 78);
+   ctx.lineTo(75, 68);
+   ctx.lineTo(108, 0);
+   ctx.closePath();
+   ctx.fillStyle = "gold"; // Set the fill color
+   ctx.fill();
+   ctx.restore();
+
+   // Third star (resized and filled)
+   ctx.save();
+   ctx.translate(150, 30); // Move the context origin to (150, 100)
+   ctx.scale(0.2, 0.2); // Scale the star down to desired size
+   ctx.beginPath();
+   ctx.moveTo(108, 0.0);
+   ctx.lineTo(141, 70);
+   ctx.lineTo(218, 78.3);
+   ctx.lineTo(162, 131);
+   ctx.lineTo(175, 205);
+   ctx.lineTo(108, 170);
+   ctx.lineTo(41.2, 205);
+   ctx.lineTo(55, 131);
+   ctx.lineTo(1, 78);
+   ctx.lineTo(75, 68);
+   ctx.lineTo(108, 0);
+   ctx.closePath();
+   ctx.fillStyle = "gold"; // Set the fill color
+   ctx.fill();
+   ctx.restore();
+}
+</script>
 
 
     </body>
